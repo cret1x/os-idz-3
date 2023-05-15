@@ -42,6 +42,54 @@ void handleClient(int client_socket) {
     current_client_id = -1;
 }
 
+void handleListener(int socket) {
+    int data[1];
+    printf("[SYSTEM] Listener connected\n");
+    for(;;) {
+        data[0] = current_client_id;
+        send(socket, data, sizeof(int), 0);
+        recv(socket, data, sizeof(int), 0);
+        if (data[0] == -2) {
+            break;
+        }
+        sleep(1);
+    }
+    printf("[SYSTEM] Listener disconnected\n");
+    close(socket);
+}
+
+void *handleListenerThread(void *args) {
+    int client_socket;
+    pthread_detach(pthread_self());
+    client_socket = ((thread_args*)args)->socket;
+    free(args);
+    handleListener(client_socket);
+    return (NULL);
+}
+
+
+void *notifierThread(void *args) {
+    pthread_t threadId;
+    int server_socket;
+    int client_socket;
+    int client_length;
+    struct sockaddr_in client_addr;
+    pthread_detach(pthread_self());
+    server_socket = ((thread_args*)args)->socket;
+    free(args);
+    listen(server_socket, MAXPENDING);
+    for (;;) {
+        client_length = sizeof(client_addr);
+        client_socket = accept(server_socket, (struct sockaddr *) &client_addr, &client_length);
+        printf("[SYSTEM] New connection from %s\n", inet_ntoa(client_addr.sin_addr));
+        thread_args *args = (thread_args*) malloc(sizeof(thread_args));
+        args->socket = client_socket;
+        if (pthread_create(&threadId, NULL, handleListenerThread, (void*) args) != 0) DieWithError("pthread_create() failed");
+    }
+    return (NULL);
+}
+
+
 void *cutterThread(void *args) {
     int server_socket;
     int client_socket;
@@ -84,16 +132,19 @@ void createServiceOnPort(char* name, void *(*func)(void*), unsigned short server
 int main(int argc, char *argv[])
 {
     unsigned short server_port;
+    unsigned short notifier_port;
 
-    if (argc != 2)
+    if (argc != 3)
     {
-        fprintf(stderr, "Usage:  %s <Server Port>\n", argv[0]);
+        fprintf(stderr, "Usage:  %s <Server Port> <Notifier Port>\n", argv[0]);
         exit(1);
     }
 
     server_port = atoi(argv[1]);
+    notifier_port = atoi(argv[2]);
 
     createServiceOnPort("Cutter", cutterThread, server_port);
+    createServiceOnPort("Notifier", notifierThread, notifier_port);
 
     for (;;) {
         sleep(1);
