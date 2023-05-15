@@ -4,8 +4,11 @@
 #include <stdlib.h>     /* for atoi() and exit() */
 #include <string.h>     /* for memset() */
 #include <unistd.h>     /* for close() */
+#include <signal.h>
 
 #define RCVBUFSIZE 3   /* Size of receive buffer */
+
+static volatile int keepRunning = 1;
 
 void DieWithError(char *errorMessage)
 {
@@ -13,14 +16,19 @@ void DieWithError(char *errorMessage)
     exit(1);
 }
 
+
+void intHandler(int dummy) {
+    keepRunning = 0;
+}
+
 int main(int argc, char *argv[])
 {
+    signal(SIGINT, intHandler);
     int client_socket;
     struct sockaddr_in server_addr;
     unsigned short server_port;
     int recv_msg_size;
     char *server_ip;
-    int client_data[3];
 
     if (argc < 3)    /* Test for correct number of arguments */
     {
@@ -39,26 +47,22 @@ int main(int argc, char *argv[])
     server_addr.sin_addr.s_addr = inet_addr(server_ip);   /* Server IP address */
     server_addr.sin_port        = htons(server_port);     /* Server port */
 
-    printf("I am client #%d, want to got to cutter\n", getpid());
+    printf("Im Listener process\n");
 
     if (connect(client_socket, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0)
         DieWithError("connect() failed");
 
-    client_data[0] = getpid();
-
-    /* Send the data to the server */
-    if (send(client_socket, client_data, RCVBUFSIZE, 0) != RCVBUFSIZE)
-        DieWithError("send() sent a different number of bytes than expected");
-
-    if ((recv_msg_size = recv(client_socket, client_data, RCVBUFSIZE, 0)) < 0)
-        DieWithError("recv() failed");
-
-    printf("Getting hair cut\n");
-    
-     if ((recv_msg_size = recv(client_socket, client_data, RCVBUFSIZE, 0)) < 0)
-        DieWithError("recv() failed");
-
-    printf("Finished\n");
+    printf("Connected to server\n");
+    int data[1];
+    while(keepRunning) {
+        if ((recv_msg_size = recv(client_socket, data, sizeof(int), 0)) < 0)
+            DieWithError("recv() failed");
+        printf("Current client id: %d\n", data[0]);
+        if (keepRunning == 0) {
+            data[0] = -2;
+        }
+        send(client_socket, data, sizeof(int), 0);
+    }
     close(client_socket);
     exit(0);
 }
