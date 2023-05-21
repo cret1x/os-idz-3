@@ -5,17 +5,32 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <signal.h>
+
+
+// there is no queue in c(((
+#include "../queue.h"
+
+
+static volatile int keepRunning = 1;
 
 
 #define MAXPENDING 10
 #define CLIENT_WAIT 1
 #define CLIENT_FINISH 2
 
-int current_client_id = -1;
-
 typedef struct thread_args {
     int socket;
+    void (*handler)(int);
 } thread_args;
+
+void intHandler(int dummy) {
+    keepRunning = 0;
+}
+
+
+// Pointer to queue;
+node_t *queue = NULL;
 
 
 void DieWithError(char *errorMessage)
@@ -24,44 +39,73 @@ void DieWithError(char *errorMessage)
     exit(1);
 }
 
-void handleClient(int client_socket) {
-    printf("[Cutter] Got new client\n");
+void handleClient(int socket) {
+    printf("[SYSTEM] Client connected!\n");
     int client_data[3];
-    recv(client_socket, client_data, sizeof(client_data), 0);
-    printf("[Cutter] Working on client #%d\n", client_data[0]);
-    current_client_id = client_data[0];
-    client_data[1] = CLIENT_WAIT;
-    send(client_socket, client_data, sizeof(client_data), 0);
-
-    sleep(2 + rand() % 2);
-
-    client_data[1] = CLIENT_FINISH;
-    send(client_socket, client_data, sizeof(client_data), 0);
-    close(client_socket);
-    printf("[Cutter] Finished client #%d\n", client_data[0]);
-    current_client_id = -1;
+    for(;;) {
+        recv(socket, client_data, sizeof(client_data), 0);
+        if (client_data[1] == -1) {
+            break;
+        }
+        printf("[Server] New client in the queue #%d\n", client_data[0]);
+        enqueue(&queue, client_data[0]);
+    }
+    close(socket);
+    printf("[SYSTEM] Client disconected!\n");
 }
 
-void *cutterThread(void *args) {
+
+void handleCutter(int socket) {
+    printf("[SYSTEM] Cutter connected!\n");
+    int client_data[3];
+    client_data[0] = 0;
+    for (;;) {
+        recv(socket, client_data, sizeof(client_data), MSG_DONTWAIT);
+        if (client_data[0] == -1) {
+            close(socket);
+            printf("[SYSTEM] Cutter disconected!\n");
+            return;
+        }
+        if (queue == NULL) {
+            sleep(1);
+            continue;
+        }
+        client_data[0] = dequeue(&queue);
+        send(socket, client_data, sizeof(client_data), 0);
+        printf("[Server] Sent client #%d to cutter\n", client_data[0]);
+        recv(socket, client_data, sizeof(client_data), 0);
+        if (client_data[0] == -1) {
+            printf("[SYSTEM] Cutter disconected!\n");
+            return;
+        }
+        printf("[Server] Client #%d finished\n", client_data[0]);
+        client_data[0] = 0;
+    }
+    client_data[0] = -1;
+    send(socket, client_data, sizeof(client_data), 0);
+    close(socket);
+}
+
+
+void *serviceThread(void *args) {
     int server_socket;
     int client_socket;
     int client_length;
     struct sockaddr_in client_addr;
     pthread_detach(pthread_self());
     server_socket = ((thread_args*)args)->socket;
+    void (*handler)(int) = ((thread_args*)args)->handler;
     free(args);
     listen(server_socket, MAXPENDING);
     for (;;) {
         client_length = sizeof(client_addr);
         client_socket = accept(server_socket, (struct sockaddr *) &client_addr, &client_length);
         printf("[SYSTEM] New connection from %s\n", inet_ntoa(client_addr.sin_addr));
-        handleClient(client_socket);
+        handler(client_socket);
     }
-    return (NULL);
 }
 
-
-void createServiceOnPort(char* name, void *(*func)(void*), unsigned short server_port) {
+void createServiceOnPort(char* name, void(*handler)(int), unsigned short server_port) {
     pthread_t serviceThreadId;
     int server_socket;
     int client_socket;
@@ -78,22 +122,26 @@ void createServiceOnPort(char* name, void *(*func)(void*), unsigned short server
     printf("[SYSTEM] Service '%s' is running on %s:%d\n", name, inet_ntoa(server_addr.sin_addr), server_port);
     thread_args *args = (thread_args*) malloc(sizeof(thread_args));
     args->socket = server_socket;
-    if (pthread_create(&serviceThreadId, NULL, func, (void*) args) != 0) DieWithError("pthread_create() failed");
+    args->handler = handler;
+    if (pthread_create(&serviceThreadId, NULL, serviceThread, (void*) args) != 0) DieWithError("pthread_create() failed");
 }
 
 int main(int argc, char *argv[])
 {
-    unsigned short server_port;
+    unsigned short client_port;
+    unsigned short cutter_port;
 
-    if (argc != 2)
+    if (argc != 3)
     {
-        fprintf(stderr, "Usage:  %s <Server Port>\n", argv[0]);
+        fprintf(stderr, "Usage:  %s <Port for cutter> <Port for client>\n", argv[0]);
         exit(1);
     }
 
-    server_port = atoi(argv[1]);
+    cutter_port = atoi(argv[1]);
+    client_port = atoi(argv[2]);
 
-    createServiceOnPort("Cutter", cutterThread, server_port);
+    createServiceOnPort("Cutter", handleCutter, cutter_port);
+    createServiceOnPort("Clients", handleClient, client_port);
 
     for (;;) {
         sleep(1);

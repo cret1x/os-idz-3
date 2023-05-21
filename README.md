@@ -7,101 +7,71 @@
 В задании на оценку 4-5:
 ```sh
 gcc client.c -o client
-gcc server.c -o server -lrt -lpthread
-./server <port>
-./client <server ip> <server port>
+gcc cutter.c -o cutter
+gcc server.c ../queue.c -o server -lrt -lpthread
+./server <port for cutter> <port for clients>
+./client <server ip> <server port> <number of clients>
+./cutter <server ip> <server port>
 ```
 В заданиях 6-10:
 ```sh
 gcc client.c -o client
 gcc listener.c -o listener
-gcc server.c -o server -lrt -lpthread
-./server <port for clients> <port for listeners>
+gcc server.c ../queue.c -o server -lrt -lpthread
+./server <port for cutter> <port for clients> <port for listeners>
 ./listener <server ip> <server port>
-./client <server ip> <server port>
+./client <server ip> <server port> <number of cleints>
+./cutter <server ip> <server port>
 ```
 
 
 ### 4-5
-Имеется приложение, создается сервер на заданном порту. К нему подключаются клиенты. Максимальное число клиентов в очереди - 10. Когда сервер может принять клиента, он принимает от него его id, и отправляет ему сообщение чтобы клиент ждал. После чего он работает с клиентом, и отправляет сообщение что закончил. После этого закрывает сокет клиента и становится готов принять нового.
-Пример работы:
-```sh
-./server 8001
-[SYSTEM] Service 'Cutter' is running on 0.0.0.0:8001
-[SYSTEM] New connection from 127.0.0.1
-[Cutter] Got new client
-[Cutter] Working on client #5965
-[Cutter] Finished client #5965
-[SYSTEM] New connection from 127.0.0.1
-[Cutter] Got new client
-[Cutter] Working on client #5966
-[Cutter] Finished client #5966
-```
-```sh
-./client 127.0.0.1 8001
-I am client #5965, want to got to cutter
-Getting hair cut
-Finished
-./client 127.0.0.1 8001
-I am client #5966, want to got to cutter
-Getting hair cut
-Finished
-
-```
-### 6-10
-К прошлому приложению добавляется возможность подключения наблюдаделя к серверу. Наблюдатель может подключаться и отключаться в любой момент. Наблюдателей может быть несколько. Работа с клиентами происходит так же как и в задании на прошлую оценку. При отключении сервера, все клиенты и наблюдатели завершают работу. При отключении клиента, сервер продолжает работу
+Имеется приложение, создается 2 сокета, один для клиентов, второй для парикмахера. Приложение клиентов генерирует новых клиентов и отправляет на сервер. Сервер добавляет их в очередь. Сервер проверяет эту очередь и отправляет очередного клиента к парикмахеру.
 Пример работы:
 ```sh
 ./server 8000 8001
 [SYSTEM] Service 'Cutter' is running on 0.0.0.0:8000
-[SYSTEM] Service 'Notifier' is running on 0.0.0.0:8001
+[SYSTEM] Service 'Clients' is running on 0.0.0.0:8001
 [SYSTEM] New connection from 127.0.0.1
-[SYSTEM] Listener connected
+[SYSTEM] Cutter connected!
 [SYSTEM] New connection from 127.0.0.1
-[Cutter] Got new client
-[Cutter] Working on client #6014
-[Cutter] Finished client #6014
-[SYSTEM] Listener disconnected
-[SYSTEM] New connection from 127.0.0.1
-[SYSTEM] Listener connected
-[SYSTEM] New connection from 127.0.0.1
-[Cutter] Got new client
-[Cutter] Working on client #6017
-[Cutter] Finished client #6017
-[SYSTEM] Listener disconnected
+[SYSTEM] Client connected!
+[Server] New client in the queue #1
+[Server] Sent client #1 to cutter
+[Server] New client in the queue #2
+[Server] Client #1 finished
+[Server] Sent client #2 to cutter
+[Server] New client in the queue #3
+[Server] New client in the queue #4
+[Server] Client #2 finished
+[Server] Sent client #3 to cutter
+[Server] New client in the queue #5
+[SYSTEM] Client disconected!
+[Server] Client #3 finished
+[Server] Sent client #4 to cutter
+[Server] Client #4 finished
+[Server] Sent client #5 to cutter
+[Server] Client #5 finished
+[SYSTEM] Cutter disconected!
 ```
-
 ```sh
-./client 127.0.0.1 8000
-I am client #6014, want to got to cutter
-Getting hair cut
-Finished
-./client 127.0.0.1 8000
-I am client #6017, want to got to cutter
-Getting hair cut
-Finished
-
+./client 127.0.0.1 8001 5
+Generating new client #1
+Generating new client #2
+Generating new client #3
+Generating new client #4
+Generating new client #5
 ```
-
 ```sh
-./listener 127.0.0.1 8001
-I am Listener process
-Connected to server
-Current client id: -1
-Current client id: -1
-Current client id: 6014
-Current client id: 6014
-Current client id: 6014
-Current client id: -1
-Current client id: -1
-
-./listener 127.0.0.1 8001
-I am Listener process
-Connected to server
-Current client id: -1
-Current client id: -1
-Current client id: -1
-Current client id: 6017
-Current client id: 6017
-Current client id: -1
+./cutter 127.0.0.1 8000
+Waiting for new client
+Got new client #1
+Got new client #2
+Got new client #3
+Got new client #4
+Got new client #5
 ```
+### 6-10
+К прошлому приложению добавляется возможность подключения наблюдаделя к серверу. При этом я сразу сделал и возможность подключения множества наблюдателей с возможностью их отключения и переподключения, а так же возможность отключать-подключать и клиента и парикмахера. Кроме того при выключении сервера, будет отправлено сообщение всем подключенным. И они завершат работу.
+Пример работы:
+![example](./cutter.png)

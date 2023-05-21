@@ -16,6 +16,7 @@ void DieWithError(char *errorMessage)
 
 
 void intHandler(int dummy) {
+    printf("Sending stop signal\n");
     keepRunning = 0;
 }
 
@@ -51,15 +52,23 @@ int main(int argc, char *argv[])
         DieWithError("connect() failed");
 
     printf("Connected to server\n");
-    int data[1];
+    int data[3];
+    data[0] = 0;
     while(keepRunning) {
-        if ((recv_msg_size = recv(client_socket, data, sizeof(int), 0)) < 0) DieWithError("recv() failed");
-        printf("Current client id: %d\n", data[0]);
-        if (keepRunning == 0) {
-            data[0] = -2;
+        recv(client_socket, data, sizeof(data), 0);
+        if (data[0] == -1) {
+            printf("Got shutdown signal from server\n");
+            close(client_socket);
+            return 0;
         }
-        send(client_socket, data, sizeof(int), 0);
+        if (data[1] >= 0) {
+            printf("Current client id: %d\n", data[1]);
+        }
+        send(client_socket, data, sizeof(data), 0);
     }
+    recv(client_socket, data, sizeof(data), 0);
+    data[0] = -1;
+    send(client_socket, data, sizeof(data), 0);
     close(client_socket);
     exit(0);
 }
